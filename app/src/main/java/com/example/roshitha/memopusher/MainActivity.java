@@ -2,6 +2,8 @@ package com.example.roshitha.memopusher;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -14,10 +16,10 @@ import android.provider.Settings;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AlertDialog;
 import android.os.Bundle;
+import android.support.v4.app.NotificationCompat;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.text.ParseException;
@@ -25,6 +27,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 public class MainActivity extends Activity {
+
+    private static final double RADIUS = 0.009009009;
 
     DatabaseHelper mDatabaseHelper;
     LocationManager locationManager;
@@ -65,12 +69,15 @@ public class MainActivity extends Activity {
         btnCreate.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                double lat = Double.parseDouble(latView.getText().toString());
-                double lon = Double.parseDouble(lonView.getText().toString());
+                Double lat = Double.parseDouble(latView.getText().toString());
+                Double lon = Double.parseDouble(lonView.getText().toString());
                 String memo = txtmemo.getText().toString();
-                String time = "11.10";
-                addData(memo, time, lat, lon);
-                txtmemo.setText("");
+                if (lat != null) {
+                    addData(memo, lat, lon);
+                    txtmemo.setText("");
+                } else {
+                    toastMessage("No Lat / Lon values!");
+                }
             }
         });
 
@@ -100,12 +107,7 @@ public class MainActivity extends Activity {
 //            Toast.makeText(mContext, location.getLatitude() + " " + location.getLongitude(), Toast.LENGTH_LONG).show();
         }
 
-        Cursor data = mDatabaseHelper.getData();
-
-        while (data.moveToNext()) {
-            String time = data.getString(2);
-            long difference = checkTime(time);
-        }
+//        pushNotifications("New Notification here", 1);
 
         super.onStart();
     }
@@ -116,6 +118,8 @@ public class MainActivity extends Activity {
         super.onResume();
     }
 
+    // Location Listener
+    // Listens for location changes
     LocationListener locationListener = new LocationListener() {
         @Override
         public void onLocationChanged(Location location) {
@@ -123,6 +127,21 @@ public class MainActivity extends Activity {
 //            locationView.setText(location.getLatitude() + " " + location.getLongitude());
             latView.setText(Double.toString(location.getLatitude()));
             lonView.setText(Double.toString(location.getLongitude()));
+
+            Cursor data = mDatabaseHelper.getData();
+
+            while (data.moveToNext()) {
+                String time = data.getString(2);
+                long difference = checkTime(time);
+
+                if (difference >= 1 && isInside(location.getLatitude(), location.getLongitude(), data.getDouble(3), data.getDouble(4))) {
+                    toastMessage("You are inside");
+                    pushNotifications(data.getString(1), data.getInt(0));
+                    if (mDatabaseHelper.deleteData(data.getString(0))) {
+                        toastMessage("data deleted at index " + data.getString(0));
+                    }
+                }
+            }
         }
 
         @Override
@@ -175,7 +194,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    public void addData(String memo, String time, double lat, double lon) {
+    // Adds data to database
+    public void addData(String memo, double lat, double lon) {
 
         SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH-mm-ss");
         String currentDate = simpleDateFormat.format(new Date());
@@ -188,11 +208,15 @@ public class MainActivity extends Activity {
             toastMessage("Insertion failed");
     }
 
+    // Toasts given msg
     public void toastMessage(String msg) {
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
     }
 
+    // check given time
+    // returns differences of hours
     public long checkTime(String time) {
+
         // Current date to compare
         SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH-mm-ss");
 
@@ -201,14 +225,12 @@ public class MainActivity extends Activity {
         try {
             Date assignedDate = simpleDateFormat.parse(time);
 
-            printDifference(curentDate, assignedDate);
-
             //milliseconds
             long different = curentDate.getTime() - assignedDate.getTime();
 
-            long days = different/(1000*60*60);
-            toastMessage(Long.toString(days));
-            return days;
+            long hours = different/(1000*60*60);
+            toastMessage(Long.toString(hours));
+            return hours;
 
         } catch (ParseException e) {
             e.printStackTrace();
@@ -217,38 +239,25 @@ public class MainActivity extends Activity {
         return -1;
     }
 
-    public void printDifference(Date startDate, Date endDate) {
+    // Check if user in 1Km range
+    public boolean isInside(double dynLat, double dynLon, double posLat, double posLon) {
 
-        //milliseconds
-        long different = startDate.getTime() - endDate.getTime();
-
-        long days = different/(1000*60);
-        toastMessage(Long.toString(days));
-
-//        System.out.println("startDate : " + startDate);
-//        System.out.println("endDate : "+ endDate);
-//        System.out.println("different : " + different);
-//
-//        long secondsInMilli = 1000;
-//        long minutesInMilli = secondsInMilli * 60;
-//        long hoursInMilli = minutesInMilli * 60;
-//        long daysInMilli = hoursInMilli * 24;
-//
-//        long elapsedDays = different / daysInMilli;
-//        different = different % daysInMilli;
-//
-//        long elapsedHours = different / hoursInMilli;
-//        different = different % hoursInMilli;
-//
-//        long elapsedMinutes = different / minutesInMilli;
-//        different = different % minutesInMilli;
-//
-//        long elapsedSeconds = different / secondsInMilli;
-//
-//        System.out.printf(
-//                "%d days, %d hours, %d minutes, %d seconds%n",
-//                elapsedDays, elapsedHours, elapsedMinutes, elapsedSeconds);
+        if ((Math.pow((dynLat - posLat), 2) + Math.pow((dynLon - posLon), 2)) <= Math.pow(RADIUS, 2))
+            return true;
+        return false;
     }
 
+    // Pushes Notifications
+    public void pushNotifications(String message, int mNotificationId) {
+        NotificationCompat.Builder mBuilder =
+                new NotificationCompat.Builder(this)
+                .setSmallIcon(R.drawable.notification)
+                .setContentTitle("Near to a Location!")
+                .setContentText(message);
 
+
+        NotificationManager mNotificationManager =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        mNotificationManager.notify(mNotificationId, mBuilder.build());
+    }
 }

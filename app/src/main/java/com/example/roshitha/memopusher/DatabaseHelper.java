@@ -70,4 +70,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         Cursor data = db.rawQuery(query, null);
         return data;
     }
+
+    public boolean deleteData(String id) {
+        String[] args = {id};
+        SQLiteDatabase database = this.getWritableDatabase();
+        int result = database.delete(TABLE_NAME, "id=?", args);
+
+        if (result == -1)
+            return false;
+        return true;
+    }
 }
